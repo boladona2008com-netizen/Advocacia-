@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema Jurídico RP - Advocacia</title>
+    
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
+
+    <style>
+        /* CSS Básico e Limpo */
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; display: flex; justify-content: center; padding: 20px; color: #333; }
+        .container { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); width: 100%; max-width: 600px; text-align: center; }
+        h1, h2 { color: #2c3e50; }
+        input, textarea, button { width: 100%; padding: 12px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        button { background-color: #2c3e50; color: white; border: none; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        button:hover { background-color: #34495e; }
+        .btn-secondary { background-color: #7f8c8d; }
+        .hidden { display: none; }
+        .card { background: #f9f9f9; padding: 15px; margin: 10px 0; text-align: left; border-left: 5px solid #2c3e50; border-radius: 4px; font-size: 14px; }
+        .admin-badge { background: #e74c3c; color: white; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+        .nav-links { margin-top: 20px; font-size: 14px; cursor: pointer; color: #3498db; text-decoration: underline; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>JurisRP ⚖️</h1>
+        <hr>
+
+        <div id="auth-section">
+            <h2 id="auth-title">Entrar no Sistema</h2>
+            <input type="email" id="email" placeholder="E-mail">
+            <input type="password" id="password" placeholder="Senha">
+            
+            <div id="admin-field-container">
+                <input type="password" id="admin-key" placeholder="Senha Admin (Opcional)">
+            </div>
+
+            <button id="btn-login" onclick="login()">Entrar</button>
+            <button id="btn-register" class="hidden" onclick="register()">Finalizar Cadastro</button>
+            
+            <div class="nav-links" id="toggle-auth" onclick="toggleAuthMode()">Não tem uma conta? Cadastre-se</div>
+            
+            <div id="register-extras" class="hidden">
+                <input type="text" id="reg-name" placeholder="Nome Completo">
+                <input type="number" id="reg-age" placeholder="Idade">
+            </div>
+        </div>
+
+        <div id="user-panel" class="hidden">
+            <h2>Solicitar Advogado (RPA)</h2>
+            <p>Olá, <span id="user-display-name"></span>!</p>
+            <textarea id="pedido-texto" rows="4" placeholder="Descreva seu pedido ou situação jurídica..."></textarea>
+            <button onclick="enviarPedido()">Enviar Pedido para Análise</button>
+            <button class="btn-secondary" onclick="logout()">Sair</button>
+        </div>
+
+        <div id="admin-panel" class="hidden">
+            <h2>Painel de Controle <span class="admin-badge">ADMIN</span></h2>
+            
+            <h3>Todos os Pedidos</h3>
+            <div id="lista-pedidos-admin">Carregando pedidos...</div>
+
+            <hr>
+            <h3>Usuários Cadastrados</h3>
+            <div id="lista-usuarios-admin">Carregando usuários...</div>
+
+            <button class="btn-secondary" onclick="logout()">Sair do Modo Admin</button>
+        </div>
+    </div>
+
+    <script>
+        // CONFIGURAÇÃO DO FIREBASE (Substitua pelos seus dados do console)
+        const firebaseConfig = {
+            apiKey: "SUA_API_KEY",
+            authDomain: "SEU_PROJETO.firebaseapp.com",
+            projectId: "SEU_PROJETO",
+            storageBucket: "SEU_PROJETO.appspot.com",
+            messagingSenderId: "SEU_SENDER_ID",
+            appId: "SEU_APP_ID"
+        };
+
+        // Inicializar Firebase
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        // Variáveis de Controle
+        let isRegisterMode = false;
+        const ADMIN_PASSWORD_FIXA = "2310";
+
+        // --- FUNÇÕES DE INTERFACE ---
+
+        function toggleAuthMode() {
+            isRegisterMode = !isRegisterMode;
+            document.getElementById('auth-title').innerText = isRegisterMode ? "Criar Nova Conta" : "Entrar no Sistema";
+            document.getElementById('btn-login').classList.toggle('hidden');
+            document.getElementById('btn-register').classList.toggle('hidden');
+            document.getElementById('register-extras').classList.toggle('hidden');
+            document.getElementById('admin-field-container').classList.toggle('hidden');
+            document.getElementById('toggle-auth').innerText = isRegisterMode ? "Já tem conta? Faça Login" : "Não tem uma conta? Cadastre-se";
+        }
+
+        // --- FUNÇÕES DE AUTENTICAÇÃO ---
+
+        function register() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const name = document.getElementById('reg-name').value;
+            const age = document.getElementById('reg-age').value;
+
+            if(!email || !password || !name) return alert("Preencha todos os campos!");
+
+            auth.createUserWithEmailAndPassword(email, password)
+                .then((userCredential) => {
+                    // Salva dados adicionais no Firestore
+                    return db.collection("users").doc(userCredential.user.uid).set({
+                        name: name,
+                        age: age,
+                        email: email,
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                })
+                .then(() => {
+                    alert("Usuário cadastrado com sucesso!");
+                    location.reload();
+                })
+                .catch(error => alert("Erro ao cadastrar: " + error.message));
+        }
+
+        function login() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const adminKey = document.getElementById('admin-key').value;
+
+            auth.signInWithEmailAndPassword(email, password)
+                .then((userCredential) => {
+                    if (adminKey === ADMIN_PASSWORD_FIXA) {
+                        showAdminPanel();
+                    } else {
+                        showUserPanel(userCredential.user);
+                    }
+                })
+                .catch(error => alert("Erro no login: " + error.message));
+        }
+
+        function logout() {
+            auth.signOut().then(() => location.reload());
+        }
+
+        // --- FUNÇÕES DO PAINEL USUÁRIO ---
+
+        function showUserPanel(user) {
+            document.getElementById('auth-section').classList.add('hidden');
+            document.getElementById('user-panel').classList.remove('hidden');
+            
+            // Buscar nome do usuário no Firestore
+            db.collection("users").doc(user.uid).get().then(doc => {
+                if (doc.exists) {
+                    document.getElementById('user-display-name').innerText = doc.data().name;
+                }
+            });
+        }
+
+        function enviarPedido() {
+            const texto = document.getElementById('pedido-texto').value;
+            const user = auth.currentUser;
+
+            if (!texto) return alert("Descreva o seu pedido.");
+
+            db.collection("pedidos").add({
+                texto: texto,
+                user: user.email,
+                data: firebase.firestore.FieldValue.serverTimestamp()
+            }).then(() => {
+                alert("Pedido enviado com sucesso!");
+                document.getElementById('pedido-texto').value = "";
+            }).catch(err => alert("Erro ao enviar: " + err));
+        }
+
+        // --- FUNÇÕES DO PAINEL ADMIN ---
+
+        function showAdminPanel() {
+            document.getElementById('auth-section').classList.add('hidden');
+            document.getElementById('admin-panel').classList.remove('hidden');
+            carregarDadosAdmin();
+        }
+
+        function carregarDadosAdmin() {
+            // Listar Pedidos
+            db.collection("pedidos").orderBy("data", "desc").onSnapshot(snapshot => {
+                let html = "";
+                snapshot.forEach(doc => {
+                    const d = doc.data();
+                    const dataFormatada = d.data ? d.data.toDate().toLocaleString() : "Recentemente";
+                    html += `
+                        <div class="card">
+                            <strong>Usuário:</strong> ${d.user}<br>
+                            <strong>Data:</strong> ${dataFormatada}<br>
+                            <strong>Descrição:</strong> ${d.texto}
+                        </div>`;
+                });
+                document.getElementById('lista-pedidos-admin').innerHTML = html || "Nenhum pedido encontrado.";
+            });
+
+            // Listar Usuários
+            db.collection("users").get().then(snapshot => {
+                let html = "";
+                snapshot.forEach(doc => {
+                    const u = doc.data();
+                    html += `
+                        <div class="card" style="border-left-color: #27ae60">
+                            <strong>Nome:</strong> ${u.name} | <strong>Idade:</strong> ${u.age}<br>
+                            <strong>E-mail:</strong> ${u.email}
+                        </div>`;
+                });
+                document.getElementById('lista-usuarios-admin').innerHTML = html || "Nenhum usuário cadastrado.";
+            });
+        }
+
+        // Persistência de Login (opcional para manter logado ao dar F5)
+        auth.onAuthStateChanged(user => {
+            if (user) {
+                // Se quiser que o login persista, precisaria validar se é admin via flag local 
+                // ou regra de banco. Para este protótipo, o login admin exige a senha no ato.
+            }
+        });
+    </script>
+</body>
+</html>
